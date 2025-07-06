@@ -128,9 +128,20 @@ if __name__ == '__main__':
         # Fifth thing I want to do is similar again: change ntn_category to just 'TRACK'
         cdf['ntn_category'] = cdf['ntn_category'].apply(lambda x: 'TRACK' if x in track_types else x)
 
-        # Sixth thing I want to do is redo checking user_accuracy and DNN_accuracy
-        cdf['user_accuracy'] = (cdf['data.most_likely'] == cdf['ntn_category']).astype(int)
-        cdf['DNN_accuracy'] = (cdf['idx_max_score'] == cdf['ntn_category']).astype(int)
+        # Sixth thing: compute classification accuracy for user and DNN
+        # Set to 1 if predicted category matches true label, else 0
+
+        # User accuracy: does user's most likely classification match truth?
+        cdf['user_accuracy'] = cdf.apply(
+            lambda row: int(row['data.most_likely'] == row['ntn_category']),
+            axis=1
+        )
+
+        # DNN accuracy: does DNN max-score classification match truth?
+        cdf['DNN_accuracy'] = cdf.apply(
+            lambda row: int(row['idx_max_score'] == row['ntn_category']),
+            axis=1
+        )
 
         # === End custom logic ===
 
