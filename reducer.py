@@ -76,7 +76,7 @@ if __name__ == '__main__':
 
         # These labels (from ground truth) include specific track/cascade types
         # We will consolidate: throughgoing_track, stopping_track, starting_track → 'TRACK'
-        track_labels_truth = {"throughgoing_track", "stopping_track", "starting_track"}
+        track_labels_truth = {"throughgoing_track", "stopping_track", "starting_track","throughgoing_bundle","stopping_bundle"}
         track_types_user = {"THROUGHGOINGTRACK", "STOPPINGTRACK", "STARTINGTRACK"}
 
         # Create lookup from subject_id to truth classification label
@@ -99,9 +99,9 @@ if __name__ == '__main__':
             correct_answer = truth_lookup.get(subj_id)
             if correct_answer in track_labels_truth:
                 correct_answer = 'TRACK'
-            elif correct_answer == "skimming_track":
+            elif correct_answer in ["skimming_track","uncontained_cascade"]:
                 correct_answer = 'SKIMMING'
-            elif correct_answer in ["contained_hadron_cascade", "unconsained_cascade"]:
+            elif correct_answer in ["contained_em_hadr_cascade","contained_hadron_cascade"]:
                 correct_answer = 'CASCADE'
 
             user_stats[user_name]['total'] += 1
