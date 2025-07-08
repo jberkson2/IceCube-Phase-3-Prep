@@ -33,7 +33,7 @@ if __name__ == '__main__':
     output_file = input("Enter what you would like the output file to be called: ").strip()
 
     print("\nConsolidating... (this might take a few seconds)\n")
-    
+
     # Construct full file paths
     classif_path = os.path.join(input_dir, classif_file)
     matched_path = os.path.join(input_dir, matched_file)
@@ -47,17 +47,15 @@ if __name__ == '__main__':
     # Define the consolidate method to attach dynamically
     def patched_consolidate(self):
         user_data = pd.read_csv(self.classif_path)
-        user_data.columns = user_data.columns.str.strip()  # <-- Fix potential whitespace issue in column names
+        user_data.columns = user_data.columns.str.strip()
 
         dnn_sim_data = pd.read_csv(self.matched_path)
 
-        # Check that all required columns exist
         required_cols = ['subject_id', 'event_id', 'data.num_votes', 'data.most_likely', 'data.agreement']
         missing = [col for col in required_cols if col not in user_data.columns]
         if missing:
             raise KeyError(f"Missing expected columns in classification file: {missing}")
 
-        # Prepare user data
         subj_user_data = pd.DataFrame({
             'subject_id': user_data['subject_id'],
             'filename': [f"subject_{sid}_event_{eid}.txt" for sid, eid in zip(user_data['subject_id'], user_data['event_id'])],
@@ -68,7 +66,6 @@ if __name__ == '__main__':
             'data.agreement': user_data['data.agreement']
         })
 
-        # Prepare DNN/simulation data
         dnn_data = dnn_sim_data[[
             'subject_id', 'filename', 'run', 'event', 'truth_classification',
             'pred_skim', 'pred_cascade', 'pred_tgtrack', 'pred_starttrack', 'pred_stoptrack',
@@ -76,34 +73,28 @@ if __name__ == '__main__':
             'qratio', 'qtot', 'max_score_val', 'idx_max_score', 'ntn_category'
         ]].copy()
 
-        # Merge both DataFrames
         cdf = pd.merge(subj_user_data, dnn_data, on='subject_id', how='outer')
 
-        # Drop duplicate columns
         cdf.drop(columns=['filename_x', 'run_x', 'event_x', 'run_y', 'event_y'], inplace=True, errors='ignore')
 
-        # === Start custom logic ===
+        # === Begin logic cleanup ===
 
-        # Defines what the track types are that I will want to change
+        # 1. Unify track labels
         track_types = {"THROUGHGOINGTRACK", "STARTINGTRACK", "STOPPINGTRACK"}
+        cdf['data.most_likely'] = cdf['data.most_likely'].apply(
+            lambda x: 'TRACK' if isinstance(x, str) and x.upper() in track_types else x
+        )
 
-        # First thing I want to do is change different tracks into general 'TRACK'
-        cdf['data.most_likely'] = cdf['data.most_likely'].apply(lambda x: 'TRACK' if x in track_types else x)
-
-        # Second thing I want to do is consolidate pred_tgtrack, pred_starttrack, pred_stoptrack into a new column
-        # I will call this new column pred_track, and it will be the sum of the three individual tracks
-        # I will then place this new column where the first of the three original columns were
+        # 2. Create consolidated pred_track
         cdf['pred_track'] = cdf[['pred_tgtrack', 'pred_starttrack', 'pred_stoptrack']].sum(axis=1)
         cdf.drop(columns=['pred_tgtrack', 'pred_starttrack', 'pred_stoptrack'], inplace=True)
         insert_at = cdf.columns.get_loc('pred_cascade') + 1
         cdf.insert(insert_at, 'pred_track', cdf.pop('pred_track'))
 
-        # Third thing I want to do is adjust max_score_val
-        # Changes value of max_score_val to be the max of the per-row values of the different pred_ categories
+        # 3. Replace max_score_val with new max across updated prediction columns
         cdf['max_score_val'] = cdf[['pred_skim', 'pred_cascade', 'pred_track']].max(axis=1)
 
-        # Fourth thing I want to do is similar to the first change: change idx_max_score to just 'TRACK'
-        # Fourth thing I want to do is update idx_max_score to reflect the category with the highest predicted score
+        # 4. Update idx_max_score robustly
         score_columns = ['pred_skim', 'pred_cascade', 'pred_track']
         label_mapping = {
             'pred_skim': 'SKIMMING',
@@ -111,10 +102,15 @@ if __name__ == '__main__':
             'pred_track': 'TRACK'
         }
 
-        # Find the column with the highest value per row, then map to the corresponding category
-        cdf['idx_max_score'] = cdf[score_columns].idxmax(axis=1).map(label_mapping)
+        def safe_label(row):
+            vals = {col: row[col] for col in score_columns if pd.notnull(row[col])}
+            if not vals:
+                return None
+            return label_mapping[max(vals, key=vals.get)]
 
-        # Map numeric values in ntn_category to their corresponding category names
+        cdf['idx_max_score'] = cdf.apply(safe_label, axis=1)
+
+        # 5. Map ntn_category to strings and collapse to TRACK
         ntn_label_mapping = {
             0: 'SKIMMING',
             1: 'CASCADE',
@@ -123,29 +119,24 @@ if __name__ == '__main__':
             4: 'STOPPINGTRACK'
         }
 
-        cdf['ntn_category'] = cdf['ntn_category'].map(ntn_label_mapping).fillna(cdf['ntn_category'])
+        cdf['ntn_category'] = cdf['ntn_category'].map(ntn_label_mapping)
+        cdf['ntn_category'] = cdf['ntn_category'].apply(
+            lambda x: 'TRACK' if isinstance(x, str) and x in track_types else x
+        )
 
-        # Fifth thing I want to do is similar again: change ntn_category to just 'TRACK'
-        cdf['ntn_category'] = cdf['ntn_category'].apply(lambda x: 'TRACK' if x in track_types else x)
-
-        # Sixth thing: compute classification accuracy for user and DNN
-        # Set to 1 if predicted category matches true label, else 0
-
-        # User accuracy: does user's most likely classification match truth?
+        # 6. Accuracy calculations
         cdf['user_accuracy'] = cdf.apply(
             lambda row: int(row['data.most_likely'] == row['ntn_category']),
             axis=1
         )
-
-        # DNN accuracy: does DNN max-score classification match truth?
         cdf['DNN_accuracy'] = cdf.apply(
             lambda row: int(row['idx_max_score'] == row['ntn_category']),
             axis=1
         )
 
-        # === End custom logic ===
+        # === End logic ===
 
-        # Save the final DataFrame
+        # Save output
         os.makedirs(self.output_dir, exist_ok=True)
         csv_name = os.path.join(self.output_dir, f"{self.output_file}.csv")
         cdf.to_csv(csv_name, index=False)
@@ -156,3 +147,4 @@ if __name__ == '__main__':
     csv_path = consolidator.consolidate()
 
     print(f" Consolidation complete. Output saved at: \n{csv_path}")
+
