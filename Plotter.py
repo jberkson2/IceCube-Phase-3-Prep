@@ -1,7 +1,7 @@
+import os
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import os
 
 ##############################################################################################
 #                                       Plotter.py
@@ -9,84 +9,120 @@ import os
 # Purpose: Generates confusion matrices between user, DNN, and truth classification labels
 # Usage: python Plotter.py (interactive input prompts)
 # Author: Jonathan Berkson
-# Date: 7/8/25
+# Date: 7/13/25
 ##############################################################################################
 
-def plot_confusion_matrices(df, outdir, dnn_filename, user_filename):
-    # Internal categories (used for data)
-    categories = ['SKIMMING', 'CASCADE', 'TRACK']
-    # Display labels (used for plotting)
-    nice_labels = ['Skimming', 'Cascade', 'Track']
+expected_categories = [
+    "SKIMMING",
+    "THROUGHGOINGTRACK",
+    "STOPPINGTRACK",
+    "STARTINGTRACK",
+    "CASCADE"
+]
 
-    # Ensure columns are categorical with correct ordering
-    for col in ['data.most_likely', 'idx_max_score', 'ntn_category']:
-        df[col] = pd.Categorical(df[col], categories=categories, ordered=True)
+def compute_fraction_matrix_user(df):
+    df = df.dropna(subset=["ntn_category", "data.most_likely"])
+    df = df[df["ntn_category"].isin(expected_categories) & df["data.most_likely"].isin(expected_categories)]
 
-    # Create output directory
-    os.makedirs(os.path.join(outdir, 'plots'), exist_ok=True)
+    count_matrix = pd.crosstab(df["data.most_likely"], df["ntn_category"])
+    count_matrix = count_matrix.reindex(index=expected_categories, columns=expected_categories, fill_value=0)
+    column_totals = count_matrix.sum(axis=0)
 
-    def make_conf_matrix(x_label, y_label, x_data, y_data, filename):
-        # Align category order
-        x_data = pd.Categorical(x_data, categories=categories, ordered=True)
-        y_data = pd.Categorical(y_data, categories=categories, ordered=True)
+    fraction_matrix = pd.DataFrame(index=expected_categories, columns=expected_categories)
+    for row_cat in expected_categories:
+        for col_cat in expected_categories:
+            numerator = count_matrix.loc[row_cat, col_cat]
+            denominator = column_totals[col_cat]
+            fraction_matrix.loc[row_cat, col_cat] = f"{numerator}/{denominator}"
+    return fraction_matrix
 
-        # Counts and column-normalized percentages
-        counts = pd.crosstab(y_data, x_data, rownames=['True'], colnames=['Predicted'])
-        norm = counts.div(counts.sum(axis=0), axis=1) * 100  # Normalize by column
-        norm = norm.round(1)
+def compute_fraction_matrix_dnn(df):
+    df = df.dropna(subset=["ntn_category", "idx_max_score"])
+    df = df[df["ntn_category"].isin(expected_categories) & df["idx_max_score"].isin(expected_categories)]
 
-        # Column totals for annotation
-        col_totals = counts.sum(axis=0)
-        annot = norm.astype(str) + '%' + '\n' + counts.astype(str) + '/' + col_totals.astype(str)
+    count_matrix = pd.crosstab(df["idx_max_score"], df["ntn_category"])
+    count_matrix = count_matrix.reindex(index=expected_categories, columns=expected_categories, fill_value=0)
+    column_totals = count_matrix.sum(axis=0)
 
-        # Plot heatmap
-        fig, ax = plt.subplots(figsize=(10, 10))
-        plt.rcParams['font.family'] = 'Helvetica'
+    fraction_matrix = pd.DataFrame(index=expected_categories, columns=expected_categories)
+    for row_cat in expected_categories:
+        for col_cat in expected_categories:
+            numerator = count_matrix.loc[row_cat, col_cat]
+            denominator = column_totals[col_cat]
+            fraction_matrix.loc[row_cat, col_cat] = f"{numerator}/{denominator}"
+    return fraction_matrix
 
-        sns.heatmap(norm, annot=annot, fmt='', annot_kws={"size": 15},
-                    cmap='Blues', xticklabels=nice_labels, yticklabels=nice_labels,
-                    vmin=0.0, vmax=100.0, cbar_kws={'label': 'Percentage'}, ax=ax)
+def convert_to_numeric(fraction_matrix):
+    numeric_matrix = fraction_matrix.copy()
+    for row in numeric_matrix.index:
+        for col in numeric_matrix.columns:
+            num, denom = fraction_matrix.loc[row, col].split('/')
+            denom = int(denom) if int(denom) > 0 else 1
+            numeric_matrix.loc[row, col] = int(num) / denom
+    return numeric_matrix.astype(float)
 
-        plt.ylabel(y_label, fontsize=20, labelpad=10)
-        plt.xlabel(x_label, fontsize=20, labelpad=10)
-        ax.tick_params(axis='both', labelsize=14)
+def plot_confusion_matrix(numeric_matrix, fraction_matrix, title, xlabel, ylabel, output_path):
+    plt.figure(figsize=(10, 8))
+    sns.set(font_scale=1.1)
+    ax = sns.heatmap(
+        numeric_matrix,
+        annot=fraction_matrix,
+        fmt="",
+        cmap="Blues",
+        cbar_kws={'label': 'Fraction of Truth Category'},
+        linewidths=0.5,
+        linecolor='gray'
+    )
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=0)
+    plt.tight_layout()
 
-        plt.title(f"{y_label} vs {x_label}", fontsize=22, pad=20)
-        plt.savefig(os.path.join(outdir, 'plots', filename), bbox_inches='tight')
-        plt.close()
-
-    # === Confusion Matrix Plots ===
-    make_conf_matrix('MC Truth Label', 'DNN Max Category',
-                     df['idx_max_score'], df['ntn_category'], dnn_filename)
-
-    make_conf_matrix('MC Truth Label', 'User Agreement',
-                     df['data.most_likely'], df['ntn_category'], user_filename)
-
-    # Print raw (unnormalized) confusion matrix
-    raw_counts = pd.crosstab(df['data.most_likely'], df['ntn_category'])
-    print("\nRaw Confusion Matrix (User vs MC Truth):")
-    print(raw_counts)
-
+    plt.savefig(output_path)
+    print(f"Saved plot to: {output_path}")
+    plt.close()
 
 if __name__ == '__main__':
-    print("==== Confusion Matrix Generator ====")
+    print("==== 5-Category Confusion Matrix Generator ====")
 
     input_dir = input("Enter input directory path (e.g. C:\\Users\\jonat\\Documents\\IceCube Research Stuff): ").strip('"')
     output_dir = input("Enter output directory path (e.g. C:\\Users\\jonat\\Documents\\IceCube Research Stuff\\output_data): ").strip('"')
-    classif_file = input("Enter consolidated CSV filename (output from Consolidator.py): ").strip()
+    classif_file = input("Enter consolidated CSV filename (e.g. consolidated-July8-individualtracks.csv): ").strip()
 
-    dnn_plot_filename = input("Enter filename for DNN vs MC Truth plot (e.g. dnn_mc_confusion.png): ").strip()
-    user_plot_filename = input("Enter filename for User vs MC Truth plot (e.g. user_mc_confusion.png): ").strip()
+    user_plot_filename = input("Enter filename for User vs MC Truth plot (e.g. user_mc_confusion_5cat.png): ").strip()
+    dnn_plot_filename = input("Enter filename for DNN vs MC Truth plot (e.g. dnn_mc_confusion_5cat.png): ").strip()
 
-    print("\nGenerating confusion matrices... (this might take a few seconds)\n")
+    input_path = os.path.join(input_dir, classif_file)
+    output_path_user = os.path.join(output_dir, user_plot_filename)
+    output_path_dnn = os.path.join(output_dir, dnn_plot_filename)
 
-    file_path = os.path.join(input_dir, classif_file)
-    df = pd.read_csv(file_path)
+    # Load data
+    df = pd.read_csv(input_path)
 
-    required_columns = {'data.most_likely', 'idx_max_score', 'ntn_category'}
-    if not required_columns.issubset(df.columns):
-        raise ValueError(f"CSV must contain columns: {required_columns}")
+    # User confusion matrix
+    frac_user = compute_fraction_matrix_user(df)
+    print("\nUser Classification Fraction Matrix:\n")
+    print(frac_user)
+    num_user = convert_to_numeric(frac_user)
+    plot_confusion_matrix(
+        num_user, frac_user,
+        title="User Classification vs. Truth (5 Categories)",
+        xlabel="Ground Truth: ntn_category",
+        ylabel="User Prediction: data.most_likely",
+        output_path=output_path_user
+    )
 
-    plot_confusion_matrices(df, output_dir, dnn_plot_filename, user_plot_filename)
-
-    print("\nDone! Plots saved in:", os.path.join(output_dir, 'plots'))
+    # DNN confusion matrix
+    frac_dnn = compute_fraction_matrix_dnn(df)
+    print("\nDNN Classification Fraction Matrix:\n")
+    print(frac_dnn)
+    num_dnn = convert_to_numeric(frac_dnn)
+    plot_confusion_matrix(
+        num_dnn, frac_dnn,
+        title="DNN Classification vs. Truth (5 Categories)",
+        xlabel="Ground Truth: ntn_category",
+        ylabel="DNN Prediction: idx_max_score",
+        output_path=output_path_dnn
+    )
