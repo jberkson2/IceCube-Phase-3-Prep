@@ -29,11 +29,13 @@ class Reducer:
         self.subjects_path = None
         self.matched_path = None
         self.output_file = None
+        self.apply_time_cut = True  # default, can be overwritten
 
 if __name__ == '__main__':
     # User input prompts
     lim = int(input("Enter retirement limit (e.g. 20): "))
     accuracy_cut = int(input("Enter minimum user accuracy cutoff (as percent, e.g. 20): "))
+    apply_time_cut = input("Apply 6-second time cutoff? (y/n): ").strip().lower() == 'y'
 
     input_dir = input("Enter input directory path: ").strip('"')
     output_dir = input("Enter output directory path: ").strip('"')
@@ -56,6 +58,7 @@ if __name__ == '__main__':
     reducer.subjects_path = subjects_path
     reducer.matched_path = matched_path
     reducer.output_file = output_file
+    reducer.apply_time_cut = apply_time_cut
 
     def patched_reduce(self):
         lim = self.retirement_lim
@@ -135,12 +138,13 @@ if __name__ == '__main__':
                 start = datetime.fromisoformat(meta['started_at'].replace('Z', '+00:00'))
                 end = datetime.fromisoformat(meta['finished_at'].replace('Z', '+00:00'))
                 time_spent = (end - start).total_seconds()
-                if time_spent <= 6:
+                if self.apply_time_cut and time_spent <= 6:
                     count_skipped_time += 1
                     continue
             except Exception:
-                count_skipped_time += 1
-                continue
+                if self.apply_time_cut:
+                    count_skipped_time += 1
+                    continue
 
             try:
                 metadata = json.loads(subj_data[i])
