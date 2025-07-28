@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
+import argparse
 import json
-import os
+import os, os.path
 from datetime import datetime
 from collections import defaultdict
 
@@ -14,7 +15,7 @@ from collections import defaultdict
 ##############################################################################################
 
 class Reducer:
-    def __init__(self, input_dir, output_dir, retirement_lim, classif_path, subj_path, matched_path, output_file, accuracy_cut):
+    def __init__(self, input_dir, output_dir, retirement_lim, classif_path, subj_path, matched_path, output_file, accuracy_cut, apply_time_cut):
         self.input_dir = input_dir
         self.output_dir = output_dir
         self.retirement_lim = retirement_lim
@@ -23,6 +24,7 @@ class Reducer:
         self.matched_path = matched_path
         self.output_file = output_file
         self.accuracy_cut = accuracy_cut / 100  # Convert percent to fraction
+        self.apply_time_cut = apply_time_cut
 
     def reduce(self):
         print("\nReducing... (this might take a couple seconds)")
@@ -95,7 +97,7 @@ class Reducer:
                 start = datetime.fromisoformat(meta['started_at'].replace('Z', '+00:00'))
                 end = datetime.fromisoformat(meta['finished_at'].replace('Z', '+00:00'))
                 time_spent = (end - start).total_seconds()
-                if time_spent <= 6:
+                if self.apply_time_cut and time_spent <= 6:
                     continue
 
                 metadata = json.loads(subj_data[i])
@@ -153,6 +155,7 @@ class Reducer:
 if __name__ == '__main__':
     lim = int(input("Enter retirement limit (e.g. 20): "))
     accuracy_cut = int(input("Enter minimum user accuracy cutoff (percent, e.g. 20): "))
+    apply_time_cut = input("Apply 6-second time cutoff? (y/n): ").strip().lower() == 'y'
 
     input_dir = input("Enter input directory path: ").strip('"')
     output_dir = input("Enter output directory path: ").strip('"')
@@ -170,6 +173,7 @@ if __name__ == '__main__':
         subj_path=os.path.join(input_dir, subj_file),
         matched_path=os.path.join(input_dir, matched_file),
         output_file=output_file,
-        accuracy_cut=accuracy_cut
+        accuracy_cut=accuracy_cut,
+        apply_time_cut=apply_time_cut
     )
     reducer.reduce()
