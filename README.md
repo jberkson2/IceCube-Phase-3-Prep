@@ -14,6 +14,9 @@ This is the output file from reducer.py. This contains data for use in the conso
 #### For clarification on different files and columns, check out [Maddie Lee's README](https://github.com/leemadeline75/IceCube-Phase-2-Data-Analysis/tree/main#)
 
 ## UPDATED .PY PROGRAMS
+
+Please note the .py files with 5option in the front do the same thing as the .py files detailed below, but without combining starting, stopping, and throughgoing tracks into a singular "track" category. Not combining these tracks may effect calculated user accuracy and event agreement, so be aware of that when comparing output files and plots.
+
 ## reducer.py
 
 The needed input files for the reducer are the Classification, Subjects, and Matched Data files. While this code is similar to the previous reducer code, there were a couple of things that needed to be changed or added. My main goal was to consolidate the three different track variations into a single general track. Along with this, user accuracy and time cuts were implemented here. With each event video being 6 seconds in Zooniverse, only user classifications made after watching the full videos were considered. Metadata from the input files allowed the start and end times to be calculated, allowing for a time_spent threshold to be calculated and applied. 
@@ -26,8 +29,16 @@ The user accuracy prompt brings up a change that I wanted to implement. The old 
 
 The needed input files for the consolidator are the Reduced Data and Matched Data files. The previous consolidator was within the do_analysis.py file, so I separated it out to be its own individual .py file. The consolidator combines the user choices and the DNN information into one file.
 
-The major thing changed in this version of the consolidator was combining the different track types into an individual general track. Comments are made within the consolidator with the process, but the general structure was to combine the DNN prediction columns for the different tracks into a pred_track column, and changing other individual columns to reflect this consolidation.
+The major thing changed in this version of the consolidator was combining the different track types into an individual general track. Comments are made within the consolidator with the process, but the general structure was to combine the DNN prediction columns for the different tracks into a pred_track column, and changing other individual columns to reflect this consolidation. The consolidator also has the agreement cut that is specified by user input. This only keeps events for which the users "agree" on what the event should be classified as above the user-indicated threshold.
 
 Again, this version of the consolidator has user prompts for file names and directories rather than them being hardcoded.
 
-#
+## Plotter.py
+
+The needed input file for the plotter is the consolidated file - which is the output from consolidator.py. The plotter creates two confusion matrices - DNN vs Truth and User vs Truth. Users indicate the input and output directories in addition to the names of the plots.
+
+Example matrices:
+
+<img width="1000" height="800" alt="60Ac90Ag-DNN" src="https://github.com/user-attachments/assets/c4018796-6be9-4452-b72a-4fa70bfb29da" />
+
+<img width="1000" height="800" alt="60Ac90Ag-User" src="https://github.com/user-attachments/assets/09c5e576-851b-49ee-a0b7-e84c9fd763dc" />
